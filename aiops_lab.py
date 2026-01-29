@@ -4,7 +4,7 @@ AIOps Lab - Network Metrics ML Demo
 Generates fake network data and demonstrates:
 1. Basic ML (regression, classification, clustering)
 2. EDA with Pandas/NumPy + plots
-3. PyTorch neural network regression
+3. PyTorch: neural network regression
 
 Install: pip install numpy pandas scikit-learn matplotlib seaborn torch
 """
@@ -92,25 +92,28 @@ def block1_basic_ml(df):
     # Clustering: group data points by behavior
     print("\n--- Clustering: KMeans ---")
     cluster_features = df[["traffic_load", "latency_ms"]].values
-    kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+    kmeans = KMeans(n_clusters=3, random_state=42, n_init=10) # K means alg. n_init does 10 runs and chooses the best
     df["cluster"] = kmeans.fit_predict(cluster_features)
 
     print("Cluster centers (load, latency):")
     for i, center in enumerate(kmeans.cluster_centers_):
         print(f"  Cluster {i}: load={center[0]:.1f}, latency={center[1]:.1f}")
 
-    # Plot clusters
+    # Plot clusters with centers
     plt.figure(figsize=(6, 4))
     plt.scatter(df["traffic_load"], df["latency_ms"], c=df["cluster"], cmap="viridis", s=15, alpha=0.7)
+    plt.scatter(kmeans.cluster_centers_[:, 0], kmeans.cluster_centers_[:, 1],
+                c='red', marker='X', s=200, edgecolors='white', linewidths=2, label='Centers')
     plt.title("KMeans Clusters")
     plt.xlabel("Traffic Load (%)")
     plt.ylabel("Latency (ms)")
+    plt.legend()
     plt.tight_layout()
     plt.show()
 
 
 def block2_eda(df):
-    """Exploratory data analysis with Pandas and plots."""
+    """Data analysis with Pandas and plots."""
     print("\n===== BLOCK 2: EDA =====")
 
     print("\n--- Data Preview ---")
@@ -150,9 +153,9 @@ class TinyNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
+            nn.Linear(2, 16), # trafficload + packetloss -> 1 hidden layer w/ 16 neurons (each w * input + b)
+            nn.ReLU(), # only keep positive z, ignore negative z (set to 0)
+            nn.Linear(16, 1), # final layer = 1 latency output
         )
 
     def forward(self, x):
@@ -164,19 +167,21 @@ def block3_pytorch(df):
     print("\n===== BLOCK 3: PYTORCH =====")
 
     # Prepare data
-    X = df[["traffic_load", "packet_loss"]].values.astype(np.float32)
-    y = df["latency_ms"].values.astype(np.float32).reshape(-1, 1)
+    X = df[["traffic_load", "packet_loss"]].values.astype(np.float32)  # inputs: 2 columns -> NumPy float32
+    y = df["latency_ms"].values.astype(np.float32).reshape(-1, 1)      # target: latency column -> float32 column vector
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Convert to tensors
+    # Convert numpy to tensors
     X_train = torch.from_numpy(X_train)
     y_train = torch.from_numpy(y_train)
     X_test = torch.from_numpy(X_test)
     y_test = torch.from_numpy(y_test)
 
     model = TinyNet()
+    # to determine how far its latency predictions are vs result
     loss_fn = nn.MSELoss()
+    # updates weights (Adam: gradient descent). params = which #'s to update, lr = step size
     optimizer = optim.Adam(model.parameters(), lr=0.01)
 
     # Training loop
@@ -185,23 +190,24 @@ def block3_pytorch(df):
         optimizer.zero_grad()
         loss = loss_fn(model(X_train), y_train)
         loss.backward()
-        optimizer.step()
+        optimizer.step() # apply grad (slopes) to optimize nearon
 
         if (epoch + 1) % 100 == 0:
             print(f"Epoch {epoch + 1}/500 - Loss: {loss.item():.3f}")
 
     # Evaluate
     model.eval()
-    with torch.no_grad():
+    with torch.no_grad(): # no learning but still using model
         test_preds = model(X_test)
         test_loss = loss_fn(test_preds, y_test).item()
     print(f"Test MSE: {test_loss:.2f}")
 
     # Show sample predictions
     print("\nSample predictions:")
-    X_test_np = X_test.numpy()
+    X_test_np = X_test.numpy() # convert back to numpy for printing
     y_test_np = y_test.numpy()
     for i in range(5):
+        # compare what the model predicted vs actual latency
         print(f"  load={X_test_np[i, 0]:.1f}, loss={X_test_np[i, 1]:.2f} -> "
               f"true={y_test_np[i, 0]:.2f}, pred={test_preds[i, 0].item():.2f}")
 
